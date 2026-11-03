@@ -1,0 +1,27 @@
+{
+  "name": "smart-lan-security",
+  "version": "1.0.0",
+  "description": "Smart LAN Security System for local network device discovery, reachability monitoring, and anomaly detection.",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test tests/*.test.js",
+    "diagnostics": "node src/index.js --diagnostics-only",
+    "scan": "node src/index.js --scan-now"
+  },
+  "keywords": [
+    "lan",
+    "security",
+    "arp",
+    "network-discovery",
+    "device-monitor",
+    "home-network"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
+
