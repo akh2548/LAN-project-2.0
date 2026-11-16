@@ -275,6 +275,8 @@ data: {"id": 2, "mac": "28:2E:89:01:D4:2E", "status": "online", "lastSeen": "202
 2. **Command Injection Prevention:** Never construct shell command strings with unsanitized user inputs. All parameters to `execFile` and `spawn` are strictly validated as valid IPv4 regex (`^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$`).
 3. **No Plain-Text Credentials:** If router integration is enabled, API tokens or passwords are never committed to code, stored in logs, or displayed in the UI.
 4. **Subnet Scope Enforcer:** Probing logic enforces that all target IPs must strictly reside inside the calculated network boundaries of the active local subnet mask. Requests targeting external or public IPs are discarded with HTTP 400.
+5. **Administrator Bootstrap:** The first administrator is created through a one-time setup page available only from a loopback connection. There are no default credentials. Login IDs are normalized to lowercase; passwords require 12–128 characters and are stored as salted scrypt hashes in SQLite.
+6. **Session Protection:** A successful sign-in receives a cryptographically random, HttpOnly, SameSite=Strict cookie. Sessions expire after eight hours and are invalidated on sign-out or server restart. Administrative API routes and the dashboard require a valid session; failed sign-ins are rate-limited.
 
 ---
 
@@ -294,4 +296,3 @@ Automated tests are built using Node.js's native test runner (`node:test` and `n
    - Tests device lifecycle transitions (`NEW` -> `ONLINE` -> `UNREACHABLE` -> `RECONNECTED`).
    - Tests `IP_CHANGED` trigger when MAC acquires new IP.
    - Tests `GATEWAY_MISMATCH` detection.
-

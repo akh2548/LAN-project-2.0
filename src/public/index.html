@@ -3,269 +3,348 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart LAN Security System</title>
+  <title>LAN Monitor — Wired Network Console</title>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-  <div class="app-container">
-    <!-- Header -->
-    <header class="app-header">
-      <div class="logo-area">
-        <div class="logo-icon">🛡️</div>
-        <div>
-          <h1>Smart LAN Security</h1>
-          <span class="subtitle">Local Network Inventory &amp; Anomaly Monitor</span>
+  <div class="shell">
+    <!-- Top Navigation Bar -->
+    <header class="top-nav">
+      <div class="brand">
+        <div class="brand-badge">
+          <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+            <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+            <line x1="6" y1="6" x2="6.01" y2="6"></line>
+            <line x1="6" y1="18" x2="6.01" y2="18"></line>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <div class="brand-title">LAN Monitor</div>
+          <div class="brand-sub">Wired Ethernet Security Console</div>
         </div>
       </div>
-      <div class="header-status">
-        <div class="status-indicator">
-          <span class="pulse-dot" id="sseIndicator"></span>
+
+      <div class="nav-controls">
+        <div class="pill-badge pill-lan" title="Targeting wired Ethernet LAN cable only. Wi-Fi connections are excluded.">
+          <span class="pill-dot"></span>
+          <span>Wired LAN Only</span>
+        </div>
+        <div class="pill-badge" id="sseStatusBadge">
+          <span class="live-dot" id="sseDot"></span>
           <span id="sseStatusText">Connecting...</span>
         </div>
-        <button id="btnAudioToggle" class="btn-icon" title="Toggle Alert Audio Chime">
-          🔔 <span id="audioStatusText">Sound ON</span>
+        <button id="btnAudioToggle" class="btn-text" title="Toggle sound alerts">
+          <span id="audioIcon">🔔</span>
+          <span id="audioText">Sound On</span>
         </button>
-        <button id="btnRouterHelp" class="btn btn-secondary">
-          ⚙️ Router Security Guide
+        <button id="btnRouterHelp" class="btn btn-outline">
+          Router Guide
         </button>
+        <div class="user-profile-badge" id="userProfileBadge" style="display: none; align-items: center; gap: 8px; font-size: 13px;">
+          <span class="user-name" id="userNameLabel" style="font-weight: 600; color: #fff;"></span>
+          <span class="tag tag-blue" id="userRoleBadge">User</span>
+        </div>
+        <button id="btnManageUsers" class="btn btn-outline" style="display: none;" type="button">Manage Users</button>
+        <button id="btnLogout" class="btn btn-outline" type="button">Sign out</button>
       </div>
     </header>
 
-    <!-- Pre-Flight Network Diagnostics Card -->
-    <section class="card diagnostics-card" id="diagnosticsCard">
-      <div class="card-header">
-        <h2>Active Network Interface &amp; Scope</h2>
-        <span class="badge badge-info" id="hostPlatformBadge">Windows</span>
-      </div>
-      <div class="grid grid-4" id="diagnosticsGrid">
-        <div class="stat-box">
-          <span class="stat-label">Active Adapter</span>
-          <span class="stat-value" id="valAdapter">Detecting...</span>
-        </div>
-        <div class="stat-box">
-          <span class="stat-label">Host IPv4 Address</span>
-          <span class="stat-value highlight" id="valHostIp">...</span>
-        </div>
-        <div class="stat-box">
-          <span class="stat-label">Subnet &amp; Scope</span>
-          <span class="stat-value" id="valSubnet">...</span>
-        </div>
-        <div class="stat-box">
-          <span class="stat-label">Default Gateway</span>
-          <span class="stat-value" id="valGateway">...</span>
-        </div>
-      </div>
-      <div id="diagnosticsWarnings" class="diagnostics-warnings"></div>
-    </section>
+    <!-- Main Workspace -->
+    <main class="content-container">
 
-    <!-- Stats & Overview Cards -->
-    <section class="grid grid-4 stats-grid">
-      <div class="card stat-card">
-        <div class="stat-icon">💻</div>
-        <div>
-          <div class="stat-num" id="statTotalDevices">0</div>
-          <div class="stat-desc">Total Devices Known</div>
+      <!-- Active Wired Interface Banner -->
+      <section class="panel interface-panel" id="interfacePanel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Active Network Connection</h2>
+            <p class="panel-subtitle">Monitoring hosts connected to your router via Ethernet switch ports</p>
+          </div>
+          <span class="tag tag-blue" id="ifaceTag">Ethernet (RJ-45)</span>
         </div>
-      </div>
-      <div class="card stat-card">
-        <div class="stat-icon text-success">🟢</div>
-        <div>
-          <div class="stat-num" id="statOnlineDevices">0</div>
-          <div class="stat-desc">Currently Online</div>
-        </div>
-      </div>
-      <div class="card stat-card">
-        <div class="stat-icon text-warning">⚠️</div>
-        <div>
-          <div class="stat-num" id="statUntrustedDevices">0</div>
-          <div class="stat-desc">Untrusted / New</div>
-        </div>
-      </div>
-      <div class="card stat-card">
-        <div class="stat-icon">⏱️</div>
-        <div>
-          <div class="stat-num-sm" id="statLastScan">Never</div>
-          <div class="stat-desc">Last Scan Sweep</div>
-        </div>
-      </div>
-    </section>
 
-    <!-- Scan Progress Bar (Visible during scan) -->
-    <div class="scan-progress-container" id="scanProgressContainer" style="display: none;">
-      <div class="scan-progress-header">
-        <span id="scanProgressLabel">Scanning subnet...</span>
-        <span id="scanProgressPercent">0%</span>
-      </div>
-      <div class="progress-bar-bg">
-        <div class="progress-bar-fill" id="scanProgressBar"></div>
-      </div>
-    </div>
-
-    <!-- Controls Toolbar -->
-    <section class="card controls-card">
-      <div class="controls-left">
-        <button id="btnScanNow" class="btn btn-primary">
-          <span class="btn-spinner" id="scanSpinner" style="display: none;"></span>
-          🔍 Scan Subnet Now
-        </button>
-        <button id="btnStopScan" class="btn btn-danger" style="display: none;">
-          ⏹️ Stop Scan
-        </button>
-        <div class="interval-selector">
-          <label for="autoScanSelect">Auto-Scan:</label>
-          <select id="autoScanSelect" class="form-select">
-            <option value="0">Manual Only</option>
-            <option value="30">Every 30s</option>
-            <option value="60" selected>Every 60s</option>
-            <option value="300">Every 5m</option>
-          </select>
-        </div>
-      </div>
-      <div class="controls-right">
-        <div class="search-box">
-          <input type="text" id="searchInput" placeholder="Search IP, MAC, name, vendor..." class="form-input">
-        </div>
-        <select id="filterStatus" class="form-select">
-          <option value="all">All Statuses</option>
-          <option value="online">Online Only</option>
-          <option value="unreachable">Offline Only</option>
-        </select>
-        <select id="filterTrust" class="form-select">
-          <option value="all">All Trust Levels</option>
-          <option value="untrusted">Untrusted Only</option>
-          <option value="trusted">Trusted Only</option>
-          <option value="familiar">Familiar Only</option>
-        </select>
-      </div>
-    </section>
-
-    <!-- Main Content Area: Device Table & Event Log -->
-    <main class="main-content">
-      <!-- Devices Table Section -->
-      <section class="card table-card">
-        <div class="card-header">
-          <h2>Discovered LAN Devices (<span id="deviceCountLabel">0</span>)</h2>
-          <div class="legend">
-            <span class="legend-item"><span class="badge badge-success">ONLINE</span> Active</span>
-            <span class="legend-item"><span class="badge badge-warning">OFFLINE</span> Unreachable</span>
-            <span class="legend-item"><span class="badge badge-purple">RANDOM</span> Private MAC</span>
+        <div class="grid grid-4 iface-grid">
+          <div class="meta-item">
+            <span class="meta-label">Ethernet Adapter</span>
+            <span class="meta-value" id="valAdapter">Detecting...</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">This PC (Wired IP)</span>
+            <span class="meta-value text-accent" id="valHostIp">...</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Wired Subnet</span>
+            <span class="meta-value" id="valSubnet">...</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Router Gateway</span>
+            <span class="meta-value" id="valGateway">...</span>
           </div>
         </div>
-        <div class="table-responsive">
-          <table class="devices-table">
+
+        <div id="interfaceNotice" class="interface-notice">
+          <span class="notice-icon">ℹ️</span>
+          <span id="interfaceNoticeText">Wi-Fi connections are excluded. Only physical Ethernet switch traffic is monitored.</span>
+        </div>
+      </section>
+
+      <!-- Key Metric Cards -->
+      <section class="grid grid-4 metrics-grid">
+        <div class="metric-card">
+          <div class="metric-top">
+            <span class="metric-label">Total Known Hosts</span>
+            <span class="metric-icon">🖥️</span>
+          </div>
+          <div class="metric-number" id="statTotalDevices">0</div>
+          <div class="metric-foot">Recorded in local database</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-top">
+            <span class="metric-label">Active Right Now</span>
+            <span class="metric-icon text-success">🟢</span>
+          </div>
+          <div class="metric-number text-success" id="statOnlineDevices">0</div>
+          <div class="metric-foot">Responding to ARP / ping</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-top">
+            <span class="metric-label">Unrecognized / New</span>
+            <span class="metric-icon text-warning">⚠️</span>
+          </div>
+          <div class="metric-number text-warning" id="statUntrustedDevices">0</div>
+          <div class="metric-foot">Requires administrator review</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-top">
+            <span class="metric-label">Last Subnet Sweep</span>
+            <span class="metric-icon">⏱️</span>
+          </div>
+          <div class="metric-number-sm" id="statLastScan">Never</div>
+          <div class="metric-foot" id="statLastScanDuration">Rate-limited /24 check</div>
+        </div>
+      </section>
+
+      <!-- Scan Progress Bar (Active During Scans) -->
+      <div class="scan-progress-box" id="scanProgressContainer" style="display: none;">
+        <div class="progress-details">
+          <span id="scanProgressLabel">Initiating wired scan...</span>
+          <span id="scanProgressPercent">0%</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="scanProgressBar"></div>
+        </div>
+      </div>
+
+      <!-- Action & Filter Bar -->
+      <section class="action-bar">
+        <div class="action-bar-left">
+          <button id="btnScanNow" class="btn btn-primary">
+            <span class="spinner" id="scanSpinner" style="display: none;"></span>
+            <span>Scan Wired LAN</span>
+          </button>
+          <button id="btnStopScan" class="btn btn-danger" style="display: none;">
+            <span>Stop Scan</span>
+          </button>
+          <div class="auto-scan-wrap">
+            <label for="autoScanSelect" class="input-label">Auto-scan:</label>
+            <select id="autoScanSelect" class="select-input">
+              <option value="0">Manual only</option>
+              <option value="30">Every 30s</option>
+              <option value="60" selected>Every 60s</option>
+              <option value="300">Every 5m</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="action-bar-right">
+          <div class="search-wrap">
+            <svg class="search-icon" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"></path>
+            </svg>
+            <input type="text" id="searchInput" placeholder="Filter by IP, MAC, name or vendor..." class="search-input">
+          </div>
+          <div class="filter-tabs">
+            <button class="filter-tab active" data-filter="all">All (<span id="countAll">0</span>)</button>
+            <button class="filter-tab" data-filter="online">Online (<span id="countOnline">0</span>)</button>
+            <button class="filter-tab" data-filter="offline">Offline (<span id="countOffline">0</span>)</button>
+            <button class="filter-tab" data-filter="untrusted">Unrecognized (<span id="countUntrusted">0</span>)</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Discovered Devices Table -->
+      <section class="panel table-panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Wired Subnet Devices</h2>
+            <p class="panel-subtitle">Layer-2 ARP cache bindings and active responders</p>
+          </div>
+        </div>
+
+        <div class="table-container">
+          <table class="data-table">
             <thead>
               <tr>
-                <th>Status</th>
-                <th>IP Address</th>
-                <th>Device Identity / Alias</th>
-                <th>MAC Address</th>
-                <th>Vendor (OUI)</th>
-                <th>Trust Level</th>
-                <th>Last Seen</th>
-                <th>Actions</th>
+                <th style="width: 100px;">Status</th>
+                <th style="width: 160px;">IPv4 Address</th>
+                <th>Device Alias / Hostname</th>
+                <th style="width: 200px;">Hardware (MAC)</th>
+                <th>Manufacturer (OUI)</th>
+                <th style="width: 120px;">Trust Level</th>
+                <th style="width: 130px;">Last Active</th>
+                <th style="width: 80px; text-align: right;">Action</th>
               </tr>
             </thead>
             <tbody id="devicesTableBody">
               <tr>
-                <td colspan="8" class="text-center py-4">No devices discovered yet. Click "Scan Subnet Now" to begin.</td>
+                <td colspan="8" class="empty-state">
+                  Scanning for wired network devices...
+                </td>
               </tr>
             </tbody>
           </table>
         </div>
       </section>
 
-      <!-- Event Log Drawer / Section -->
-      <section class="card event-log-card">
-        <div class="card-header">
-          <h2>Security Event Audit Log</h2>
-          <div class="event-filter">
-            <select id="eventFilterType" class="form-select form-select-sm">
-              <option value="">All Event Types</option>
-              <option value="DEVICE_NEW">New Devices</option>
-              <option value="IP_CHANGED">IP Reassignments</option>
-              <option value="GATEWAY_MISMATCH">Gateway Alerts</option>
-              <option value="DEVICE_OFFLINE">Offline Events</option>
-            </select>
+      <!-- Live Event Activity Feed -->
+      <section class="panel event-panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Network Activity Log</h2>
+            <p class="panel-subtitle">Local security audit trail (stored offline in SQLite)</p>
           </div>
+          <select id="eventFilterType" class="select-input select-sm">
+            <option value="">All events</option>
+            <option value="DEVICE_NEW">New devices</option>
+            <option value="IP_CHANGED">IP reassignments</option>
+            <option value="GATEWAY_MISMATCH">Gateway warnings</option>
+            <option value="DEVICE_OFFLINE">Offline transitions</option>
+          </select>
         </div>
-        <div class="event-list" id="eventList">
-          <div class="empty-events">Loading audit logs...</div>
+
+        <div class="event-feed" id="eventList">
+          <div class="empty-state">Loading activity logs...</div>
         </div>
       </section>
+
     </main>
 
-    <!-- Router Security & Boundary Modal -->
+    <!-- Router Security & MAC Blacklist Modal -->
     <div class="modal-backdrop" id="routerModal" style="display: none;">
-      <div class="modal-window">
-        <div class="modal-header">
-          <h2>Router Security &amp; Switched Network Limits</h2>
-          <button class="modal-close" id="btnCloseRouterModal">&times;</button>
+      <div class="modal-card">
+        <div class="modal-top">
+          <h3>Router Administration &amp; Access Control</h3>
+          <button class="btn-close" id="btnCloseRouterModal">&times;</button>
         </div>
-        <div class="modal-body" id="routerModalContent">
-          <div class="alert alert-warning">
-            <strong>Security Boundary Notice:</strong>
+        <div class="modal-content">
+          <div class="callout callout-info">
+            <strong>Switched Network Reality:</strong>
             <p>
-              An ordinary computer on a switched network (Ethernet or Wi-Fi) cannot inspect traffic passing
-              between other computers or forcibly disconnect devices from the router. To block rogue devices,
-              you must use your router's administration interface.
+              On a standard unmanaged router, Ethernet switch ports prevent computers from sniffing traffic
+              intended for other devices. A program on your PC cannot kick devices off the network.
+              To block or isolate devices, configure <strong>MAC Filtering</strong> directly in your router settings.
             </p>
           </div>
-          <div class="router-quick-action">
+
+          <div class="router-link-row">
             <a href="#" id="routerPortalLink" target="_blank" class="btn btn-primary">
-              🌐 Open Router Portal (<span id="routerPortalIpText">192.168.31.1</span>)
+              Open Router Portal (<span id="routerPortalIpText">192.168.0.1</span>) &rarr;
             </a>
           </div>
-          <div id="routerGuidesContainer"></div>
+
+          <div class="guides-list" id="routerGuidesContainer"></div>
         </div>
       </div>
     </div>
 
-    <!-- Edit Device Modal -->
+    <!-- Edit Device Profile Modal -->
     <div class="modal-backdrop" id="editDeviceModal" style="display: none;">
-      <div class="modal-window modal-sm">
-        <div class="modal-header">
-          <h2>Edit Device Profile</h2>
-          <button class="modal-close" id="btnCloseEditModal">&times;</button>
+      <div class="modal-card modal-card-sm">
+        <div class="modal-top">
+          <h3>Edit Device Details</h3>
+          <button class="btn-close" id="btnCloseEditModal">&times;</button>
         </div>
-        <form id="editDeviceForm" class="modal-body">
+        <form id="editDeviceForm" class="modal-content">
           <input type="hidden" id="editDeviceId">
-          <div class="form-group">
-            <label>IP Address</label>
-            <input type="text" id="editDeviceIp" class="form-input" readonly>
+          
+          <div class="form-row">
+            <label class="form-label">IPv4 Address</label>
+            <input type="text" id="editDeviceIp" class="text-input" readonly>
           </div>
-          <div class="form-group">
-            <label>MAC Address</label>
-            <input type="text" id="editDeviceMac" class="form-input" readonly>
+
+          <div class="form-row">
+            <label class="form-label">MAC Address</label>
+            <input type="text" id="editDeviceMac" class="text-input" readonly>
           </div>
-          <div class="form-group">
-            <label>Custom Alias / Name</label>
-            <input type="text" id="editDeviceName" class="form-input" placeholder="e.g. Living Room Smart TV">
+
+          <div class="form-row">
+            <label class="form-label">Friendly Device Name / Alias</label>
+            <input type="text" id="editDeviceName" class="text-input" placeholder="e.g. Office Desktop, Smart TV, NAS Server">
           </div>
-          <div class="form-group">
-            <label>Trust Level</label>
-            <select id="editDeviceTrust" class="form-select">
-              <option value="untrusted">⚠️ Untrusted (Warn on activity)</option>
-              <option value="familiar">🔷 Familiar (Known guest / device)</option>
-              <option value="trusted">🟢 Trusted (Verified own host / router)</option>
+
+          <div class="form-row">
+            <label class="form-label">Trust Status</label>
+            <select id="editDeviceTrust" class="select-input">
+              <option value="trusted">🟢 Trusted (Verified device)</option>
+              <option value="familiar">🔷 Familiar (Known guest / secondary)</option>
+              <option value="untrusted">⚠️ Untrusted (Raise alerts on activity)</option>
             </select>
           </div>
-          <div class="form-group">
-            <label>Notes</label>
-            <textarea id="editDeviceNotes" class="form-input" rows="2" placeholder="Optional administrator notes..."></textarea>
+
+          <div class="form-row">
+            <label class="form-label">Administrator Notes</label>
+            <textarea id="editDeviceNotes" class="text-input" rows="2" placeholder="Optional notes..."></textarea>
           </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" id="btnCancelEdit">Cancel</button>
+
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" id="btnCancelEdit">Cancel</button>
             <button type="submit" class="btn btn-primary">Save Changes</button>
           </div>
         </form>
       </div>
     </div>
 
-    <!-- Floating Live Alert Banner -->
-    <div id="liveAlertContainer" class="live-alert-container"></div>
+    <!-- Manage Users Modal (Admin Only) -->
+    <div class="modal-backdrop" id="usersModal" style="display: none;">
+      <div class="modal-card">
+        <div class="modal-top">
+          <h3>User Management</h3>
+          <button class="btn-close" id="btnCloseUsersModal">&times;</button>
+        </div>
+        <div class="modal-content">
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Username / Email</th>
+                  <th>Full Name</th>
+                  <th>Role</th>
+                  <th>Joined</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="usersTableBody">
+                <tr><td colspan="5" class="empty-state">Loading users...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" id="btnCloseUsersModalBtn">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Toast Container -->
+    <div id="liveAlertContainer" class="toast-stack"></div>
   </div>
 
   <script src="/app.js"></script>
 </body>
 </html>
-

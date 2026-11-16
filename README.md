@@ -66,6 +66,8 @@ node src/index.js
 Open your browser to:
 👉 **`http://127.0.0.1:3000`**
 
+On first launch, the app opens a one-time administrator setup page. Choose a login ID and a password of at least 12 characters; there is no built-in default account. The password is stored as a scrypt hash in the local SQLite database. After setup, sign in at `http://127.0.0.1:3000/admin-login.html`. The dashboard and API require an authenticated session, which expires after eight hours. Initial setup is restricted to the local computer.
+
 ---
 
 ## ⚙️ Configuration & Environment Variables
@@ -161,4 +163,3 @@ npm test
 
 ## 📄 License
 MIT License. Free for personal and commercial local network administration.
-

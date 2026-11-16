@@ -18,6 +18,11 @@ module.exports = {
     host: process.env.HOST || '127.0.0.1', // Binds to localhost by default for security
     port: parseInt(process.env.PORT || '3000', 10)
   },
+  network: {
+    // Restrict strictly to wired LAN (Ethernet cable), ignoring Wi-Fi adapters
+    lanOnly: process.env.LAN_ONLY !== 'false',
+    preferEthernet: true
+  },
   scanner: {
     // Concurrency limit for active probes (prevents saturating router)
     concurrency: parseInt(process.env.SCAN_CONCURRENCY || '16', 10),

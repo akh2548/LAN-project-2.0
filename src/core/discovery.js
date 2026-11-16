@@ -111,14 +111,17 @@ class DiscoveryEngine {
     try {
       // 1. Determine target IPs
       let targetIps = [];
+      let activeInterfaceIp = null;
       if (subnetIp && netmask) {
         targetIps = NetworkDiagnostics.generateSubnetIps(subnetIp, netmask);
+        activeInterfaceIp = subnetIp;
       } else {
         const diag = new NetworkDiagnostics(this.adapter);
         const check = await diag.runPreFlightCheck();
         if (!check.activeInterface || !check.activeInterface.ip) {
-          throw new Error('No active network adapter found to scan.');
+          throw new Error('No active wired Ethernet network adapter found. Please ensure your Ethernet cable is connected.');
         }
+        activeInterfaceIp = check.activeInterface.ip;
         targetIps = NetworkDiagnostics.generateSubnetIps(check.activeInterface.ip, check.activeInterface.netmask);
       }
 
@@ -128,7 +131,7 @@ class DiscoveryEngine {
       }
 
       // 2. Phase 1: Direct ARP table read before probing
-      const initialArpEntries = await this.adapter.getArpTable();
+      const initialArpEntries = await this.adapter.getArpTable(activeInterfaceIp);
       const arpMap = new Map();
       for (const entry of initialArpEntries) {
         arpMap.set(entry.ip, entry.mac);
@@ -184,7 +187,7 @@ class DiscoveryEngine {
       }
 
       // 4. Phase 3: Post-probe ARP table read
-      const updatedArpEntries = await this.adapter.getArpTable();
+      const updatedArpEntries = await this.adapter.getArpTable(activeInterfaceIp);
       for (const entry of updatedArpEntries) {
         arpMap.set(entry.ip, entry.mac);
       }

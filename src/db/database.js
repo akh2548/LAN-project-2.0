@@ -88,7 +88,142 @@ class DatabaseManager {
         value TEXT NOT NULL,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       );
+
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        full_name TEXT,
+        password_hash TEXT NOT NULL,
+        password_salt TEXT NOT NULL,
+        role TEXT DEFAULT 'user',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        last_login TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+
+      CREATE TABLE IF NOT EXISTS sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        token TEXT UNIQUE NOT NULL,
+        user_id INTEGER NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        expires_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
+      CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
     `);
+  }
+
+  // User Management
+  getUserCount() {
+    return this.db.prepare('SELECT COUNT(*) as count FROM users').get().count;
+  }
+
+  getAdminAccount() {
+    const admin = this.db.prepare("SELECT username as login_id, password_hash, password_salt FROM users WHERE role = 'admin' LIMIT 1").get();
+    if (!admin) return null;
+    return {
+      login_id: admin.login_id,
+      password_hash: Buffer.isBuffer(admin.password_hash) ? admin.password_hash : Buffer.from(admin.password_hash, 'hex'),
+      password_salt: Buffer.isBuffer(admin.password_salt) ? admin.password_salt : Buffer.from(admin.password_salt, 'hex')
+    };
+  }
+
+  createAdminAccount(loginId, passwordHash, passwordSalt) {
+    const existing = this.getAdminAccount();
+    if (existing) return false;
+    const hashHex = Buffer.isBuffer(passwordHash) ? passwordHash.toString('hex') : passwordHash;
+    const saltHex = Buffer.isBuffer(passwordSalt) ? passwordSalt.toString('hex') : passwordSalt;
+    this.createUser({
+      username: loginId,
+      full_name: 'Administrator',
+      password_hash: hashHex,
+      password_salt: saltHex,
+      role: 'admin'
+    });
+    return true;
+  }
+
+  createUser({ username, full_name = null, password_hash, password_salt, role = 'user' }) {
+    const stmt = this.db.prepare(`
+      INSERT INTO users (username, full_name, password_hash, password_salt, role, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    const nowIso = new Date().toISOString();
+    const result = stmt.run(username.trim().toLowerCase(), full_name ? full_name.trim() : null, password_hash, password_salt, role, nowIso);
+    return this.getUserById(Number(result.lastInsertRowid));
+  }
+
+  getUserByUsername(username) {
+    if (!username) return null;
+    const stmt = this.db.prepare('SELECT * FROM users WHERE username = ?');
+    return stmt.get(username.trim().toLowerCase()) || null;
+  }
+
+  getUserById(id) {
+    const stmt = this.db.prepare('SELECT id, username, full_name, role, created_at, last_login FROM users WHERE id = ?');
+    return stmt.get(id) || null;
+  }
+
+  getAllUsers() {
+    const stmt = this.db.prepare('SELECT id, username, full_name, role, created_at, last_login FROM users ORDER BY id ASC');
+    return stmt.all();
+  }
+
+  updateUserRole(id, role) {
+    this.db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id);
+    return this.getUserById(id);
+  }
+
+  updateUserLastLogin(id) {
+    const nowIso = new Date().toISOString();
+    this.db.prepare('UPDATE users SET last_login = ? WHERE id = ?').run(nowIso, id);
+  }
+
+  deleteUser(id) {
+    this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
+    this.db.prepare('DELETE FROM users WHERE id = ?').run(id);
+    return true;
+  }
+
+  // Session Management
+  createSession(userId, token, expiryDays = 7) {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + expiryDays * 24 * 60 * 60 * 1000).toISOString();
+    const stmt = this.db.prepare(`
+      INSERT INTO sessions (token, user_id, created_at, expires_at)
+      VALUES (?, ?, ?, ?)
+    `);
+    stmt.run(token, userId, now.toISOString(), expiresAt);
+    return { token, userId, expiresAt };
+  }
+
+  getUserBySessionToken(token) {
+    if (!token) return null;
+    const nowIso = new Date().toISOString();
+    const stmt = this.db.prepare(`
+      SELECT u.id, u.username, u.full_name, u.role, u.created_at, u.last_login, s.token, s.expires_at
+      FROM sessions s
+      JOIN users u ON s.user_id = u.id
+      WHERE s.token = ? AND s.expires_at > ?
+    `);
+    return stmt.get(token, nowIso) || null;
+  }
+
+  deleteSession(token) {
+    if (!token) return;
+    this.db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+  }
+
+  deleteUserSessions(userId) {
+    this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
+  }
+
+  cleanExpiredSessions() {
+    const nowIso = new Date().toISOString();
+    this.db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(nowIso);
   }
 
   // Devices

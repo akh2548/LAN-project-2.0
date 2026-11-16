@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0b0f16">
+  <title>Register — LAN Monitor</title>
+  <link rel="stylesheet" href="/auth.css">
+</head>
+<body>
+  <main class="auth-layout">
+    <a class="brand" href="/">LAN Monitor</a>
+    <section class="auth-card" aria-labelledby="page-title">
+      <h1 id="page-title">Create account</h1>
+      <p class="card-intro">Create an account to use LAN Monitor.</p>
+
+      <form class="auth-form" data-auth-form="register" novalidate>
+        <div class="field">
+          <label for="register-name">Full name</label>
+          <input id="register-name" name="name" type="text" autocomplete="name" placeholder="Your name" minlength="2" maxlength="80" required>
+        </div>
+        <div class="field">
+          <label for="register-email">Email address</label>
+          <input id="register-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+        </div>
+        <div class="field">
+          <label for="register-password">Password</label>
+          <div class="password-wrap">
+            <input id="register-password" name="password" type="password" autocomplete="new-password" placeholder="At least 8 characters" minlength="8" required>
+            <button class="password-toggle" type="button" aria-label="Show password" aria-pressed="false">Show</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="confirm-password">Confirm password</label>
+          <div class="password-wrap">
+            <input id="confirm-password" name="confirmPassword" type="password" autocomplete="new-password" placeholder="Enter password again" minlength="8" required>
+            <button class="password-toggle" type="button" aria-label="Show password" aria-pressed="false">Show</button>
+          </div>
+        </div>
+        <label class="check-label">
+          <input name="terms" type="checkbox" required checked>
+          <span>I agree to local network access and monitoring terms.</span>
+        </label>
+        <button class="submit-button" type="submit">Create account</button>
+        <p class="form-message" role="status" aria-live="polite"></p>
+      </form>
+
+      <p class="auth-links">Already registered? <a href="/login.html">Sign in</a></p>
+    </section>
+    <footer class="auth-footer">Smart LAN Security System</footer>
+  </main>
+  <script src="/auth.js" defer></script>
+</body>
+</html>

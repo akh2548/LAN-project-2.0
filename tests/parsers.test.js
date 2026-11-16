@@ -68,12 +68,14 @@ Interface: 192.168.31.98 --- 0x7
   assert.deepStrictEqual(entries[0], {
     ip: '192.168.31.1',
     mac: '64:64:4A:12:34:56',
-    type: 'dynamic'
+    type: 'dynamic',
+    interfaceIp: '192.168.31.98'
   });
   assert.deepStrictEqual(entries[1], {
     ip: '192.168.31.105',
     mac: 'B8:27:EB:AA:BB:CC',
-    type: 'dynamic'
+    type: 'dynamic',
+    interfaceIp: '192.168.31.98'
   });
 });
 

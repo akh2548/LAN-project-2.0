@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const url = require('node:url');
 const config = require('../config');
+const AuthManager = require('./auth');
 const SSEManager = require('./sse');
 const RouterAdvisor = require('./router-advisor');
 const NetworkDiagnostics = require('../core/diagnostics');
@@ -10,9 +11,14 @@ const DiscoveryEngine = require('../core/discovery');
 const DeviceStateMachine = require('../core/state-machine');
 const Notifier = require('../core/notifier');
 
+function isLoopbackAddress(address) {
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+}
+
 class AppServer {
   constructor({ database, platformAdapter = null }) {
     this.db = database;
+    this.auth = new AuthManager(this.db);
     this.adapter = platformAdapter;
     this.sse = new SSEManager();
     this.notifier = new Notifier({ platformAdapter: this.adapter, sseManager: this.sse });
@@ -141,14 +147,26 @@ class AppServer {
     });
   }
 
-  sendJson(res, statusCode, data) {
+  sendJson(res, statusCode, data, headers = {}) {
     res.writeHead(statusCode, {
       'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type'
+      'Cache-Control': 'no-store',
+      ...headers
     });
     res.end(JSON.stringify(data));
+  }
+
+  getSessionToken(req) {
+    const cookieHeader = req.headers && req.headers.cookie;
+    if (!cookieHeader) return null;
+    const sessionCookie = cookieHeader.split(';').map(value => value.trim())
+      .find(value => value.startsWith('lan_monitor_session='));
+    return sessionCookie ? sessionCookie.slice('lan_monitor_session='.length) : null;
+  }
+
+  sendAuthRedirect(res, location) {
+    res.writeHead(302, { Location: location, 'Cache-Control': 'no-store' });
+    res.end();
   }
 
   async handleRequest(req, res) {
@@ -156,18 +174,155 @@ class AppServer {
     const pathname = parsedUrl.pathname;
     const method = req.method.toUpperCase();
 
-    // CORS preflight
-    if (method === 'OPTIONS') {
-      res.writeHead(204, {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type'
-      });
-      res.end();
-      return;
-    }
-
     try {
+      const sessionToken = this.getSessionToken(req);
+      const authenticated = this.auth.isSessionValid(sessionToken);
+      const currentUser = this.auth.getSessionUser(sessionToken);
+
+      if (pathname === '/api/auth/status' && method === 'GET') {
+        const payload = {
+          setupComplete: this.auth.isConfigured(),
+          authenticated
+        };
+        if (currentUser) payload.user = currentUser;
+        this.sendJson(res, 200, payload);
+        return;
+      }
+
+      if (pathname === '/api/auth/setup' && method === 'POST') {
+        if (!isLoopbackAddress(req.socket?.remoteAddress)) {
+          this.sendJson(res, 403, { error: 'Administrator setup is available only from this computer.' });
+          return;
+        }
+        const body = await this.readJsonBody(req);
+        const result = await this.auth.createInitialAdmin(body.loginId, body.password);
+        if (!result.success) {
+          this.sendJson(res, result.status, { error: result.error });
+          return;
+        }
+        const login = await this.auth.login(body.loginId, body.password, req.socket?.remoteAddress || 'local');
+        const secure = req.socket?.encrypted ? '; Secure' : '';
+        this.sendJson(res, 201, { success: true, user: login.user }, {
+          'Set-Cookie': `lan_monitor_session=${login.token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${secure}`
+        });
+        return;
+      }
+
+      if (pathname === '/api/auth/register' && method === 'POST') {
+        const body = await this.readJsonBody(req);
+        const result = await this.auth.registerUser({
+          username: body.email || body.username || body.loginId,
+          email: body.email || body.username,
+          full_name: body.name || body.fullName || body.full_name,
+          password: body.password
+        });
+        if (!result.success) {
+          this.sendJson(res, result.status, { error: result.error });
+          return;
+        }
+        const secure = req.socket?.encrypted ? '; Secure' : '';
+        this.sendJson(res, 201, { success: true, user: result.user }, {
+          'Set-Cookie': `lan_monitor_session=${result.token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${secure}`
+        });
+        return;
+      }
+
+      if (pathname === '/api/auth/login' && method === 'POST') {
+        const body = await this.readJsonBody(req);
+        const identifier = body.loginId || body.email || body.username;
+        const result = await this.auth.login(
+          identifier,
+          body.password,
+          req.socket?.remoteAddress || 'local'
+        );
+        if (!result.success) {
+          this.sendJson(res, result.status, { error: result.error });
+          return;
+        }
+        const secure = req.socket?.encrypted ? '; Secure' : '';
+        this.sendJson(res, 200, { success: true, user: result.user }, {
+          'Set-Cookie': `lan_monitor_session=${result.token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${secure}`
+        });
+        return;
+      }
+
+      if (pathname === '/api/auth/me' && method === 'GET') {
+        if (!authenticated || !currentUser) {
+          this.sendJson(res, 401, { error: 'Not authenticated' });
+          return;
+        }
+        this.sendJson(res, 200, { user: currentUser });
+        return;
+      }
+
+      if (pathname === '/api/users' && method === 'GET') {
+        if (!authenticated || currentUser?.role !== 'admin') {
+          this.sendJson(res, 403, { error: 'Administrator access required' });
+          return;
+        }
+        const users = this.db.getAllUsers();
+        this.sendJson(res, 200, users);
+        return;
+      }
+
+      if (pathname.startsWith('/api/users/') && pathname.endsWith('/role') && method === 'PATCH') {
+        if (!authenticated || currentUser?.role !== 'admin') {
+          this.sendJson(res, 403, { error: 'Administrator access required' });
+          return;
+        }
+        const id = parseInt(pathname.split('/')[3], 10);
+        const body = await this.readJsonBody(req);
+        if (!['admin', 'user'].includes(body.role)) {
+          this.sendJson(res, 400, { error: 'Invalid role specified.' });
+          return;
+        }
+        const updated = this.db.updateUserRole(id, body.role);
+        this.sendJson(res, 200, updated);
+        return;
+      }
+
+      if (pathname.startsWith('/api/users/') && method === 'DELETE') {
+        if (!authenticated || currentUser?.role !== 'admin') {
+          this.sendJson(res, 403, { error: 'Administrator access required' });
+          return;
+        }
+        const id = parseInt(pathname.split('/')[3], 10);
+        if (id === currentUser.id) {
+          this.sendJson(res, 400, { error: 'You cannot delete your own account.' });
+          return;
+        }
+        this.db.deleteUser(id);
+        this.sendJson(res, 200, { success: true });
+        return;
+      }
+
+      if (pathname === '/api/auth/logout' && method === 'POST') {
+        this.auth.logout(sessionToken);
+        this.sendJson(res, 200, { success: true }, {
+          'Set-Cookie': 'lan_monitor_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'
+        });
+        return;
+      }
+
+      const publicAuthPaths = new Set([
+        '/admin-login.html',
+        '/admin-setup.html',
+        '/login.html',
+        '/register.html',
+        '/auth.css',
+        '/auth.js'
+      ]);
+
+      if (pathname.startsWith('/api/') && !authenticated) {
+        this.sendJson(res, 401, { error: 'Authentication required' });
+        return;
+      }
+
+      if (!pathname.startsWith('/api/') && !publicAuthPaths.has(pathname) && !authenticated) {
+        this.sendAuthRedirect(res, this.auth.isConfigured() ? '/admin-login.html' : '/admin-setup.html');
+        return;
+      }
+
       // API Routes
       if (pathname === '/api/stream' && method === 'GET') {
         this.sse.handleRequest(req, res);
@@ -260,6 +415,12 @@ class AppServer {
         return;
       }
 
+      if (method === 'OPTIONS') {
+        res.writeHead(204, { 'Cache-Control': 'no-store' });
+        res.end();
+        return;
+      }
+
       // Static Frontend Files
       let filePath = pathname === '/' ? '/index.html' : pathname;
       const safePath = path.normalize(filePath).replace(/^(\.\.[\/\\])+/, '');
@@ -277,7 +438,11 @@ class AppServer {
           '.ico': 'image/x-icon'
         };
         const contentType = mimeTypes[ext] || 'application/octet-stream';
-        res.writeHead(200, { 'Content-Type': contentType });
+        res.writeHead(200, {
+          'Content-Type': contentType,
+          'Cache-Control': 'no-store',
+          'X-Content-Type-Options': 'nosniff'
+        });
         fs.createReadStream(fullPath).pipe(res);
         return;
       }
@@ -292,4 +457,3 @@ class AppServer {
 }
 
 module.exports = AppServer;
-

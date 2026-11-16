@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0b0f16">
+  <title>Administrator Setup — LAN Monitor</title>
+  <link rel="stylesheet" href="/auth.css">
+</head>
+<body>
+  <main class="auth-layout">
+    <a class="brand" href="/">LAN Monitor</a>
+    <section class="auth-card" aria-labelledby="page-title">
+      <h1 id="page-title">Set up administrator</h1>
+      <p class="card-intro">Create the local administrator account to protect the dashboard.</p>
+
+      <form class="auth-form" data-auth-form="admin-setup" novalidate>
+        <div class="field">
+          <label for="setup-login-id">Login ID</label>
+          <input id="setup-login-id" name="loginId" type="text" autocomplete="username" placeholder="Choose a login ID" minlength="3" maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9._\-]{2,31}" title="Use 3–32 letters, numbers, dots, underscores, or hyphens." required>
+        </div>
+        <div class="field">
+          <label for="setup-password">Password</label>
+          <div class="password-wrap">
+            <input id="setup-password" name="password" type="password" autocomplete="new-password" placeholder="At least 12 characters" minlength="12" maxlength="128" required>
+            <button class="password-toggle" type="button" aria-label="Show password" aria-pressed="false">Show</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="setup-confirm-password">Confirm password</label>
+          <div class="password-wrap">
+            <input id="setup-confirm-password" name="confirmPassword" type="password" autocomplete="new-password" placeholder="Enter password again" minlength="12" maxlength="128" required>
+            <button class="password-toggle" type="button" aria-label="Show password" aria-pressed="false">Show</button>
+          </div>
+        </div>
+        <p class="setup-hint">Use a password of at least 12 characters. There is no password recovery option yet.</p>
+        <button class="submit-button" type="submit">Create administrator</button>
+        <p class="form-message" role="status" aria-live="polite"></p>
+      </form>
+
+      <p class="auth-note">This setup is available once, from this computer only.</p>
+    </section>
+    <footer class="auth-footer">Smart LAN Security System</footer>
+  </main>
+  <script src="/auth.js" defer></script>
+</body>
+</html>

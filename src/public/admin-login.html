@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0b0f16">
+  <title>Administrator Sign In — LAN Monitor</title>
+  <link rel="stylesheet" href="/auth.css">
+</head>
+<body>
+  <main class="auth-layout">
+    <a class="brand" href="/">LAN Monitor</a>
+    <section class="auth-card" aria-labelledby="page-title">
+      <h1 id="page-title">Administrator sign in</h1>
+      <p class="card-intro">Sign in to open the network dashboard.</p>
+
+      <form class="auth-form" data-auth-form="admin-login" novalidate>
+        <div class="field">
+          <label for="admin-login-id">Login ID</label>
+          <input id="admin-login-id" name="loginId" type="text" autocomplete="username" placeholder="Administrator login ID" minlength="3" maxlength="32" required>
+        </div>
+        <div class="field">
+          <label for="admin-password">Password</label>
+          <div class="password-wrap">
+            <input id="admin-password" name="password" type="password" autocomplete="current-password" placeholder="Password" minlength="12" maxlength="128" required>
+            <button class="password-toggle" type="button" aria-label="Show password" aria-pressed="false">Show</button>
+          </div>
+        </div>
+        <button class="submit-button" type="submit">Sign in</button>
+        <p class="form-message" role="status" aria-live="polite"></p>
+      </form>
+
+      <p class="auth-links">First time using LAN Monitor? <a href="/admin-setup.html">Set up administrator</a></p>
+      <p class="auth-note">Local administrator access. Your session ends after 8 hours.</p>
+    </section>
+    <footer class="auth-footer">Smart LAN Security System</footer>
+  </main>
+  <script src="/auth.js" defer></script>
+</body>
+</html>

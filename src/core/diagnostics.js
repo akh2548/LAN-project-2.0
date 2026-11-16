@@ -112,14 +112,43 @@ class NetworkDiagnostics {
   /**
    * Runs complete pre-flight network diagnostics check.
    */
-  async runPreFlightCheck() {
+  async runPreFlightCheck(options = {}) {
+    const lanOnly = options.lanOnly !== undefined ? options.lanOnly : (config.network?.lanOnly ?? true);
     const interfaces = await this.adapter.getNetworkInterfaces();
-    const primaryInterface = interfaces.find(i => i.gateway && i.ip) || interfaces[0] || null;
+
+    // Distinguish wired Ethernet LAN from wireless Wi-Fi interfaces
+    const wiredInterfaces = interfaces.filter(i => 
+      i.isWired || 
+      i.mediaType === 'ethernet' || 
+      /ethernet|lan|gbe|gigabit|usb.*ethernet/i.test(i.name) || 
+      /ethernet|lan|gbe|gigabit|usb.*ethernet/i.test(i.description || '')
+    );
+    const wifiInterfaces = interfaces.filter(i => !wiredInterfaces.includes(i));
+
+    let primaryInterface = null;
+    let modeNotice = '';
+
+    if (lanOnly) {
+      // Prioritize wired Ethernet LAN adapter
+      primaryInterface = wiredInterfaces.find(i => i.gateway && i.ip) || wiredInterfaces.find(i => i.ip) || null;
+      if (primaryInterface) {
+        modeNotice = `Wired Ethernet LAN active (${primaryInterface.name || primaryInterface.description}). Wi-Fi adapters are excluded.`;
+      } else {
+        modeNotice = 'LAN-Only Mode is active, but no active wired Ethernet cable connection was detected.';
+      }
+    } else {
+      primaryInterface = interfaces.find(i => i.gateway && i.ip) || interfaces[0] || null;
+    }
 
     const report = {
       timestamp: new Date().toISOString(),
       platform: process.platform,
+      mode: lanOnly ? 'ethernet_only' : 'all_adapters',
+      modeNotice,
+      lanOnly,
       allInterfaces: interfaces,
+      wiredInterfaces,
+      wifiInterfaces,
       activeInterface: primaryInterface,
       subnet: null,
       gatewayStatus: {
@@ -182,7 +211,14 @@ class NetworkDiagnostics {
         report.warnings.push('No default gateway configured for the active network adapter. Network may be link-local or isolated.');
       }
     } else {
-      report.warnings.push('No active IPv4 network interface detected. Ensure Wi-Fi or Ethernet is connected.');
+      if (lanOnly) {
+        report.warnings.push('LAN-Only Mode: No active wired Ethernet LAN adapter with an IPv4 address detected. Please ensure your Ethernet cable is plugged in.');
+        if (wifiInterfaces.length > 0) {
+          report.warnings.push(`Detected Wi-Fi adapter (${wifiInterfaces.map(w => w.name || w.description).join(', ')}), but Wi-Fi is excluded per LAN-Only policy.`);
+        }
+      } else {
+        report.warnings.push('No active IPv4 network interface detected. Ensure Wi-Fi or Ethernet is connected.');
+      }
     }
 
     return report;

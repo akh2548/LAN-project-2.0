@@ -42,6 +42,7 @@ class WindowsAdapter extends PlatformAdapter {
     const lines = output.split(/\r?\n/);
     const adapters = [];
     let currentAdapter = null;
+    let lookingForGatewayIpv4 = false;
 
     for (const rawLine of lines) {
       const line = rawLine.trim();
@@ -52,9 +53,12 @@ class WindowsAdapter extends PlatformAdapter {
         if (currentAdapter && currentAdapter.ip) {
           adapters.push(currentAdapter);
         }
+        const isEthernetHeader = /^Ethernet/i.test(match[1]);
         currentAdapter = {
           type: match[1],
           name: match[2].trim(),
+          mediaType: isEthernetHeader ? 'ethernet' : 'wifi',
+          isWired: isEthernetHeader,
           description: '',
           mac: null,
           ip: null,
@@ -72,17 +76,36 @@ class WindowsAdapter extends PlatformAdapter {
         currentAdapter.isDisconnected = true;
       } else if (/Description[ .:]+(.+)$/i.test(line)) {
         currentAdapter.description = line.match(/Description[ .:]+(.+)$/i)[1].trim();
-      } else if (/Physical Address[ .:]+([0-9A-Fa-f-]+)/i.test(line)) {
-        currentAdapter.mac = normalizeMac(line.match(/Physical Address[ .:]+([0-9A-Fa-f-]+)/i)[1]);
-      } else if (/IPv4 Address[ .:]+([0-9.]+)/i.test(line)) {
-        currentAdapter.ip = line.match(/IPv4 Address[ .:]+([0-9.]+)/i)[1].replace(/\(Preferred\)/, '').trim();
-      } else if (/Subnet Mask[ .:]+([0-9.]+)/i.test(line)) {
-        currentAdapter.netmask = line.match(/Subnet Mask[ .:]+([0-9.]+)/i)[1].trim();
-      } else if (/Default Gateway[ .:]+([0-9.]+)/i.test(line)) {
-        const gw = line.match(/Default Gateway[ .:]+([0-9.]+)/i);
-        if (gw) currentAdapter.gateway = gw[1].trim();
-      } else if (/DHCP Server[ .:]+([0-9.]+)/i.test(line)) {
-        currentAdapter.dhcpServer = line.match(/DHCP Server[ .:]+([0-9.]+)/i)[1].trim();
+        if (/Ethernet|GBE|Gigabit|LAN|USB2\.0 Ethernet|Fast Ethernet|PCIe GBE/i.test(currentAdapter.description)) {
+          currentAdapter.mediaType = 'ethernet';
+          currentAdapter.isWired = true;
+        } else if (/Wi-Fi|WiFi|Wireless|802\.11/i.test(currentAdapter.description)) {
+          currentAdapter.mediaType = 'wifi';
+          currentAdapter.isWired = false;
+        }
+      } else if (/Physical Address[^:]*:\s*([0-9A-Fa-f-]+)/i.test(line)) {
+        currentAdapter.mac = normalizeMac(line.match(/Physical Address[^:]*:\s*([0-9A-Fa-f-]+)/i)[1]);
+      } else if (/IPv4 Address[^:]*:\s*([0-9.]+)/i.test(line)) {
+        currentAdapter.ip = line.match(/IPv4 Address[^:]*:\s*([0-9.]+)/i)[1].replace(/\(Preferred\)/, '').trim();
+      } else if (/Subnet Mask[^:]*:\s*([0-9.]+)/i.test(line)) {
+        currentAdapter.netmask = line.match(/Subnet Mask[^:]*:\s*([0-9.]+)/i)[1].trim();
+      } else if (/Default Gateway/i.test(line)) {
+        const gwMatch = line.match(/Default Gateway[^:]*:\s*([0-9]{1,3}(?:\.[0-9]{1,3}){3})/i);
+        if (gwMatch) {
+          currentAdapter.gateway = gwMatch[1].trim();
+          lookingForGatewayIpv4 = false;
+        } else {
+          lookingForGatewayIpv4 = true;
+        }
+      } else if (lookingForGatewayIpv4 && /^\s*([0-9]{1,3}(?:\.[0-9]{1,3}){3})\s*$/.test(line)) {
+        const nextGw = line.match(/^\s*([0-9]{1,3}(?:\.[0-9]{1,3}){3})\s*$/);
+        if (nextGw) {
+          currentAdapter.gateway = nextGw[1].trim();
+          lookingForGatewayIpv4 = false;
+        }
+      } else if (/DHCP Server[^:]*:\s*([0-9.]+)/i.test(line)) {
+        lookingForGatewayIpv4 = false;
+        currentAdapter.dhcpServer = line.match(/DHCP Server[^:]*:\s*([0-9.]+)/i)[1].trim();
       }
     }
 
@@ -92,7 +115,7 @@ class WindowsAdapter extends PlatformAdapter {
 
     // Attach gateways from routing table if missing in ipconfig
     for (const ad of adapters) {
-      if (!ad.gateway && ad.ip && defaultGatewayMap.has(ad.ip)) {
+      if ((!ad.gateway || ad.gateway === '.' || !/^[0-9]{1,3}(\.[0-9]{1,3}){3}$/.test(ad.gateway)) && ad.ip && defaultGatewayMap.has(ad.ip)) {
         ad.gateway = defaultGatewayMap.get(ad.ip);
       }
     }
@@ -128,12 +151,13 @@ class WindowsAdapter extends PlatformAdapter {
 
   /**
    * Reads Windows ARP table via arp -a
+   * @param {string|null} targetInterfaceIp Optional filter for specific interface IP
    * @returns {Promise<Array<{ip: string, mac: string, type: string}>>}
    */
-  async getArpTable() {
+  async getArpTable(targetInterfaceIp = null) {
     const arpRes = await this.execCmd('arp', ['-a']);
     if (arpRes.ok && arpRes.stdout) {
-      const parsed = WindowsAdapter.parseArp(arpRes.stdout);
+      const parsed = WindowsAdapter.parseArp(arpRes.stdout, targetInterfaceIp);
       if (parsed.length > 0) return parsed;
     }
 
@@ -155,16 +179,31 @@ class WindowsAdapter extends PlatformAdapter {
   /**
    * Parses arp -a output into normalized records
    * @param {string} output 
+   * @param {string|null} targetInterfaceIp
    */
-  static parseArp(output) {
+  static parseArp(output, targetInterfaceIp = null) {
     if (!output || typeof output !== 'string') return [];
 
     const lines = output.split(/\r?\n/);
     const results = [];
     const seenIps = new Set();
+    let currentInterfaceIp = null;
 
     for (const rawLine of lines) {
       const line = rawLine.trim();
+
+      // Check for interface boundary: e.g. "Interface: 192.168.0.100 --- 0x15"
+      const ifaceMatch = line.match(/^Interface:\s*([0-9.]+)/i);
+      if (ifaceMatch) {
+        currentInterfaceIp = ifaceMatch[1];
+        continue;
+      }
+
+      // If filtering for a specific interface, skip lines belonging to other interfaces
+      if (targetInterfaceIp && currentInterfaceIp && currentInterfaceIp !== targetInterfaceIp) {
+        continue;
+      }
+
       // Match pattern: 192.168.31.1   64-64-4a-12-34-56   dynamic
       const match = line.match(/^([0-9]{1,3}(?:\.[0-9]{1,3}){3})\s+([0-9a-fA-F]{2}[-:][0-9a-fA-F]{2}[-:][0-9a-fA-F]{2}[-:][0-9a-fA-F]{2}[-:][0-9a-fA-F]{2}[-:][0-9a-fA-F]{2})\s+(\w+)/i);
       if (match) {
@@ -183,7 +222,8 @@ class WindowsAdapter extends PlatformAdapter {
           results.push({
             ip,
             mac: normMac,
-            type: type === 'dynamic' ? 'dynamic' : 'static'
+            type: type === 'dynamic' ? 'dynamic' : 'static',
+            interfaceIp: currentInterfaceIp
           });
         }
       }

@@ -1,18 +1,47 @@
-// Smart LAN Security System - Frontend Client
+// LAN Monitor — Handcrafted Client Controller
 
 let devices = [];
 let events = [];
 let systemInfo = null;
 let soundEnabled = true;
 let isScanning = false;
+let activeFilter = 'all';
 let eventSource = null;
 
 // DOM Elements
-const sseIndicator = document.getElementById('sseIndicator');
+const sseStatusBadge = document.getElementById('sseStatusBadge');
+const sseDot = document.getElementById('sseDot');
 const sseStatusText = document.getElementById('sseStatusText');
+
 const btnAudioToggle = document.getElementById('btnAudioToggle');
-const audioStatusText = document.getElementById('audioStatusText');
+const audioIcon = document.getElementById('audioIcon');
+const audioText = document.getElementById('audioText');
 const btnRouterHelp = document.getElementById('btnRouterHelp');
+const btnLogout = document.getElementById('btnLogout');
+const userProfileBadge = document.getElementById('userProfileBadge');
+const userNameLabel = document.getElementById('userNameLabel');
+const userRoleBadge = document.getElementById('userRoleBadge');
+const btnManageUsers = document.getElementById('btnManageUsers');
+const usersModal = document.getElementById('usersModal');
+const btnCloseUsersModal = document.getElementById('btnCloseUsersModal');
+const btnCloseUsersModalBtn = document.getElementById('btnCloseUsersModalBtn');
+const usersTableBody = document.getElementById('usersTableBody');
+
+let currentUser = null;
+
+const valAdapter = document.getElementById('valAdapter');
+const valHostIp = document.getElementById('valHostIp');
+const valSubnet = document.getElementById('valSubnet');
+const valGateway = document.getElementById('valGateway');
+const ifaceTag = document.getElementById('ifaceTag');
+const interfaceNoticeText = document.getElementById('interfaceNoticeText');
+
+const statTotalDevices = document.getElementById('statTotalDevices');
+const statOnlineDevices = document.getElementById('statOnlineDevices');
+const statUntrustedDevices = document.getElementById('statUntrustedDevices');
+const statLastScan = document.getElementById('statLastScan');
+const statLastScanDuration = document.getElementById('statLastScanDuration');
+
 const btnScanNow = document.getElementById('btnScanNow');
 const btnStopScan = document.getElementById('btnStopScan');
 const scanSpinner = document.getElementById('scanSpinner');
@@ -22,24 +51,14 @@ const scanProgressLabel = document.getElementById('scanProgressLabel');
 const scanProgressPercent = document.getElementById('scanProgressPercent');
 const autoScanSelect = document.getElementById('autoScanSelect');
 
-const valAdapter = document.getElementById('valAdapter');
-const valHostIp = document.getElementById('valHostIp');
-const valSubnet = document.getElementById('valSubnet');
-const valGateway = document.getElementById('valGateway');
-const hostPlatformBadge = document.getElementById('hostPlatformBadge');
-const diagnosticsWarnings = document.getElementById('diagnosticsWarnings');
-
-const statTotalDevices = document.getElementById('statTotalDevices');
-const statOnlineDevices = document.getElementById('statOnlineDevices');
-const statUntrustedDevices = document.getElementById('statUntrustedDevices');
-const statLastScan = document.getElementById('statLastScan');
-const deviceCountLabel = document.getElementById('deviceCountLabel');
-
 const searchInput = document.getElementById('searchInput');
-const filterStatus = document.getElementById('filterStatus');
-const filterTrust = document.getElementById('filterTrust');
-const devicesTableBody = document.getElementById('devicesTableBody');
+const filterTabs = document.querySelectorAll('.filter-tab');
+const countAll = document.getElementById('countAll');
+const countOnline = document.getElementById('countOnline');
+const countOffline = document.getElementById('countOffline');
+const countUntrusted = document.getElementById('countUntrusted');
 
+const devicesTableBody = document.getElementById('devicesTableBody');
 const eventList = document.getElementById('eventList');
 const eventFilterType = document.getElementById('eventFilterType');
 
@@ -62,62 +81,130 @@ const editDeviceNotes = document.getElementById('editDeviceNotes');
 
 const liveAlertContainer = document.getElementById('liveAlertContainer');
 
-// Web Audio Chime generator (offline, no external audio files required)
-function playAlertChime(severity = 'INFO') {
+// Subtle Web Audio Chime (Offline, synthesized)
+function playNotificationChime(severity = 'INFO') {
   if (!soundEnabled) return;
   try {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) return;
-    const ctx = new AudioContext();
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
     osc.type = 'sine';
-    const freq = severity === 'CRITICAL' ? 880 : 587.33; // A5 or D5
-    osc.frequency.setValueAtTime(freq, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(freq * 1.5, ctx.currentTime + 0.15);
+    const baseFreq = severity === 'CRITICAL' ? 784 : 523.25; // G5 or C5
+    osc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.33, ctx.currentTime + 0.12);
 
-    gain.gain.setValueAtTime(0.2, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+    gain.gain.setValueAtTime(0.18, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.28);
 
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start();
-    osc.stop(ctx.currentTime + 0.3);
+    osc.stop(ctx.currentTime + 0.28);
   } catch {
-    // Ignore audio permission or context restrictions
+    // Ignore audio permission blocks
   }
 }
 
-// Initial Boot
+// Lifecycle Init
 async function init() {
-  setupEventListeners();
+  bindEvents();
+  try {
+    const response = await fetch('/api/auth/status');
+    if (!response.ok) throw new Error('Unable to verify user session.');
+    const authStatus = await response.json();
+    if (!authStatus.authenticated) {
+      if (!authStatus.setupComplete && !authStatus.hasUsers) {
+        window.location.replace('/register.html');
+      } else {
+        window.location.replace('/login.html');
+      }
+      return;
+    }
+
+    currentUser = authStatus.user;
+    if (currentUser) {
+      userNameLabel.textContent = currentUser.full_name || currentUser.username;
+      userRoleBadge.textContent = currentUser.role.toUpperCase();
+      userRoleBadge.className = currentUser.role === 'admin' ? 'tag tag-blue' : 'tag tag-gray';
+      userProfileBadge.style.display = 'inline-flex';
+
+      if (currentUser.role === 'admin') {
+        btnManageUsers.style.display = 'inline-flex';
+      } else {
+        btnScanNow.disabled = true;
+        btnScanNow.title = 'Administrator privileges required to initiate sweeps.';
+        btnScanNow.style.opacity = '0.5';
+      }
+    }
+  } catch (error) {
+    console.error('Session check failed:', error);
+    return;
+  }
+
+  window.setInterval(async () => {
+    try {
+      const response = await fetch('/api/auth/status');
+      if (!response.ok) throw new Error('Unable to verify user session.');
+      const authStatus = await response.json();
+      if (!authStatus.authenticated) window.location.replace('/login.html');
+    } catch (error) {
+      console.error('Session refresh failed:', error);
+    }
+  }, 60 * 1000);
+
   connectSSE();
   await Promise.all([
-    loadSystemInfo(),
-    loadStats(),
-    loadDevices(),
-    loadEvents()
+    fetchSystemInfo(),
+    fetchStats(),
+    fetchDevices(),
+    fetchEvents()
   ]);
 }
 
-function setupEventListeners() {
+function bindEvents() {
   btnAudioToggle.addEventListener('click', () => {
     soundEnabled = !soundEnabled;
-    audioStatusText.textContent = soundEnabled ? 'Sound ON' : 'Sound OFF';
+    audioIcon.textContent = soundEnabled ? '🔔' : '🔕';
+    audioText.textContent = soundEnabled ? 'Sound On' : 'Muted';
     btnAudioToggle.style.opacity = soundEnabled ? '1' : '0.6';
   });
 
-  btnScanNow.addEventListener('click', startScan);
-  btnStopScan.addEventListener('click', stopScan);
+  btnScanNow.addEventListener('click', triggerScan);
+  btnStopScan.addEventListener('click', cancelScan);
 
-  searchInput.addEventListener('input', renderDevices);
-  filterStatus.addEventListener('change', renderDevices);
-  filterTrust.addEventListener('change', renderDevices);
+  searchInput.addEventListener('input', renderDeviceTable);
 
-  eventFilterType.addEventListener('change', () => loadEvents(eventFilterType.value));
+  filterTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      filterTabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      activeFilter = tab.dataset.filter;
+      renderDeviceTable();
+    });
+  });
 
-  btnRouterHelp.addEventListener('click', openRouterModal);
+  eventFilterType.addEventListener('change', () => fetchEvents(eventFilterType.value));
+
+  btnRouterHelp.addEventListener('click', showRouterModal);
+  btnManageUsers.addEventListener('click', showUsersModal);
+  btnCloseUsersModal.addEventListener('click', () => usersModal.style.display = 'none');
+  btnCloseUsersModalBtn.addEventListener('click', () => usersModal.style.display = 'none');
+  usersModal.addEventListener('click', (e) => {
+    if (e.target === usersModal) usersModal.style.display = 'none';
+  });
+
+  btnLogout.addEventListener('click', async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      window.location.assign('/login.html');
+    } catch (error) {
+      console.error('Sign out failed:', error);
+      window.location.assign('/login.html');
+    }
+  });
   btnCloseRouterModal.addEventListener('click', () => routerModal.style.display = 'none');
   routerModal.addEventListener('click', (e) => {
     if (e.target === routerModal) routerModal.style.display = 'none';
@@ -129,32 +216,40 @@ function setupEventListeners() {
     if (e.target === editDeviceModal) editDeviceModal.style.display = 'none';
   });
 
-  editDeviceForm.addEventListener('submit', handleSaveDeviceProfile);
+  editDeviceForm.addEventListener('submit', saveDeviceProfile);
+
+  // Keyboard shortcut '/' to search
+  window.addEventListener('keydown', (e) => {
+    if (e.key === '/' && document.activeElement !== searchInput) {
+      e.preventDefault();
+      searchInput.focus();
+    }
+  });
 }
 
-// API Loaders
-async function loadSystemInfo() {
+// System Diagnostics & Network Info
+async function fetchSystemInfo() {
   try {
     const res = await fetch('/api/system/info');
     systemInfo = await res.json();
-    renderDiagnostics(systemInfo);
+    updateInterfaceView(systemInfo);
   } catch (err) {
-    console.error('Failed to load system info:', err);
+    console.error('System info fetch failed:', err);
   }
 }
 
-function renderDiagnostics(info) {
+function updateInterfaceView(info) {
   if (!info) return;
 
-  hostPlatformBadge.textContent = info.platform.toUpperCase();
-
-  if (info.activeInterface) {
-    valAdapter.textContent = info.activeInterface.description || info.activeInterface.name || 'Unknown';
-    valHostIp.textContent = info.activeInterface.ip || 'Unavailable';
-    valGateway.textContent = info.activeInterface.gateway || 'None';
+  const active = info.activeInterface;
+  if (active) {
+    valAdapter.textContent = active.description || active.name || 'Wired Adapter';
+    valHostIp.textContent = active.ip || 'Unavailable';
+    valGateway.textContent = active.gateway || 'None detected';
+    ifaceTag.textContent = active.isWired ? 'Wired Ethernet' : 'Local Adapter';
   } else {
-    valAdapter.textContent = 'None Detected';
-    valHostIp.textContent = 'Unavailable';
+    valAdapter.textContent = 'No Wired Adapter';
+    valHostIp.textContent = 'Disconnected';
     valGateway.textContent = 'None';
   }
 
@@ -164,85 +259,82 @@ function renderDiagnostics(info) {
     valSubnet.textContent = 'Unknown';
   }
 
-  // Warnings & Guidance
-  diagnosticsWarnings.innerHTML = '';
-  if (info.warnings && info.warnings.length > 0) {
-    info.warnings.forEach(w => {
-      const el = document.createElement('div');
-      el.className = 'warning-banner';
-      el.textContent = `⚠️ ${w}`;
-      diagnosticsWarnings.appendChild(el);
-    });
+  if (info.modeNotice) {
+    interfaceNoticeText.textContent = info.modeNotice;
   }
 }
 
-async function loadStats() {
+// Stats & Metrics
+async function fetchStats() {
   try {
     const res = await fetch('/api/stats');
-    const stats = await res.json();
-    statTotalDevices.textContent = stats.totalDevices;
-    statOnlineDevices.textContent = stats.onlineDevices;
-    statUntrustedDevices.textContent = stats.untrustedDevices;
+    const data = await res.json();
+    statTotalDevices.textContent = data.totalDevices;
+    statOnlineDevices.textContent = data.onlineDevices;
+    statUntrustedDevices.textContent = data.untrustedDevices;
 
-    if (stats.lastScan && stats.lastScan.completed_at) {
-      statLastScan.textContent = formatRelativeTime(stats.lastScan.completed_at);
+    if (data.lastScan && data.lastScan.completed_at) {
+      statLastScan.textContent = formatHumanTime(data.lastScan.completed_at);
+      if (data.lastScan.duration_ms) {
+        statLastScanDuration.textContent = `Completed in ${(data.lastScan.duration_ms / 1000).toFixed(1)}s`;
+      }
     } else {
       statLastScan.textContent = 'Never';
     }
   } catch (err) {
-    console.error('Failed to load stats:', err);
+    console.error('Stats fetch failed:', err);
   }
 }
 
-async function loadDevices() {
+// Discovered Devices
+async function fetchDevices() {
   try {
     const res = await fetch('/api/devices');
     devices = await res.json();
-    renderDevices();
+    updateFilterCounts();
+    renderDeviceTable();
   } catch (err) {
-    console.error('Failed to load devices:', err);
+    console.error('Device fetch failed:', err);
   }
 }
 
-async function loadEvents(filterType = '') {
-  try {
-    const url = filterType ? `/api/events?type=${encodeURIComponent(filterType)}` : '/api/events';
-    const res = await fetch(url);
-    events = await res.json();
-    renderEvents();
-  } catch (err) {
-    console.error('Failed to load events:', err);
-  }
+function updateFilterCounts() {
+  countAll.textContent = devices.length;
+  countOnline.textContent = devices.filter(d => d.status === 'online').length;
+  countOffline.textContent = devices.filter(d => d.status === 'unreachable').length;
+  countUntrusted.textContent = devices.filter(d => d.trust_level === 'untrusted').length;
 }
 
-// Device Table Rendering & Filtering
-function renderDevices() {
+function renderDeviceTable() {
   const query = searchInput.value.toLowerCase().trim();
-  const statusFilter = filterStatus.value;
-  const trustFilter = filterTrust.value;
+  const hostIp = systemInfo?.activeInterface?.ip;
+  const gatewayIp = systemInfo?.activeInterface?.gateway;
 
   const filtered = devices.filter(dev => {
-    if (statusFilter !== 'all' && dev.status !== statusFilter) return false;
-    if (trustFilter !== 'all' && dev.trust_level !== trustFilter) return false;
+    // Filter tab check
+    if (activeFilter === 'online' && dev.status !== 'online') return false;
+    if (activeFilter === 'offline' && dev.status === 'online') return false;
+    if (activeFilter === 'untrusted' && dev.trust_level !== 'untrusted') return false;
 
+    // Search query check
     if (query) {
-      const matchIp = (dev.last_ip || '').toLowerCase().includes(query);
-      const matchMac = (dev.mac_address || '').toLowerCase().includes(query);
-      const matchName = (dev.custom_name || '').toLowerCase().includes(query);
-      const matchHost = (dev.hostname || '').toLowerCase().includes(query);
-      const matchVendor = (dev.vendor || '').toLowerCase().includes(query);
-      return matchIp || matchMac || matchName || matchHost || matchVendor;
+      const haystack = [
+        dev.last_ip,
+        dev.mac_address,
+        dev.custom_name,
+        dev.hostname,
+        dev.vendor
+      ].join(' ').toLowerCase();
+      return haystack.includes(query);
     }
     return true;
   });
 
-  deviceCountLabel.textContent = filtered.length;
-
   if (filtered.length === 0) {
     devicesTableBody.innerHTML = `
       <tr>
-        <td colspan="8" class="text-center py-4 text-muted">
-          No matching devices found.
+        <td colspan="8" class="empty-state">
+          No devices match the current filter or search criteria.
         </td>
       </tr>
     `;
@@ -251,50 +343,69 @@ function renderDevices() {
 
   devicesTableBody.innerHTML = filtered.map(dev => {
     const isOnline = dev.status === 'online';
-    const statusBadge = isOnline 
-      ? '<span class="badge badge-success">ONLINE</span>' 
-      : '<span class="badge badge-warning">OFFLINE</span>';
+    const isHostPc = hostIp && dev.last_ip === hostIp;
+    const isGateway = gatewayIp && dev.last_ip === gatewayIp;
 
-    let trustBadge = '<span class="badge badge-danger">UNTRUSTED</span>';
-    if (dev.trust_level === 'trusted') {
-      trustBadge = '<span class="badge badge-info">TRUSTED</span>';
-    } else if (dev.trust_level === 'familiar') {
-      trustBadge = '<span class="badge badge-purple">FAMILIAR</span>';
+    // Status pill
+    const statusHtml = isOnline
+      ? '<span class="status-pill status-online"><span class="status-dot"></span>Online</span>'
+      : '<span class="status-pill status-offline"><span class="status-dot"></span>Offline</span>';
+
+    // Role tags
+    let roleTag = '';
+    if (isHostPc) {
+      roleTag = '<span class="tag tag-blue">This PC (Wired)</span>';
+    } else if (isGateway) {
+      roleTag = '<span class="tag tag-purple">Router Gateway</span>';
     }
 
-    const randomBadge = dev.is_randomized_mac 
-      ? '<span class="badge badge-purple" title="Locally Administered / Privacy MAC">RANDOM</span> ' 
+    // Name display
+    const primaryName = dev.custom_name || (isGateway ? 'Router Gateway' : (isHostPc ? 'This Computer' : 'Wired Device'));
+    const hostnameSub = dev.hostname 
+      ? `<div class="device-sub">${escape(dev.hostname)}</div>`
+      : `<div class="device-sub" style="opacity: 0.5;">Hostname unassigned</div>`;
+
+    // Trust badge
+    let trustHtml = '<span class="tag tag-amber">Untrusted</span>';
+    if (dev.trust_level === 'trusted') {
+      trustHtml = '<span class="tag tag-green">Trusted</span>';
+    } else if (dev.trust_level === 'familiar') {
+      trustHtml = '<span class="tag tag-blue">Familiar</span>';
+    }
+
+    // Randomized MAC indicator
+    const randomBadge = dev.is_randomized_mac
+      ? '<span class="tag tag-purple" title="Locally Administered / Privacy MAC">Private MAC</span> '
       : '';
-
-    const hostnameDisplay = dev.hostname 
-      ? `<div class="device-hostname">${escapeHtml(dev.hostname)}</div>`
-      : '<div class="device-hostname text-muted">(Unavailable / Blocked)</div>';
-
-    const customNameDisplay = dev.custom_name
-      ? `<div class="device-name">${escapeHtml(dev.custom_name)}</div>`
-      : `<div class="device-name text-muted">Unnamed Device</div>`;
-
-    const vendorDisplay = dev.is_randomized_mac
-      ? 'Private / Randomized'
-      : (dev.vendor || 'Unknown Vendor');
 
     return `
       <tr>
-        <td>${statusBadge}</td>
-        <td class="ip-cell">${escapeHtml(dev.last_ip)}</td>
+        <td>${statusHtml}</td>
         <td>
-          ${customNameDisplay}
-          ${hostnameDisplay}
+          <span class="mono-ip" title="Click to copy IP" onclick="copyText('${dev.last_ip}')" style="cursor: pointer;">
+            ${escape(dev.last_ip)}
+          </span>
         </td>
-        <td class="mac-cell">
-          ${randomBadge}${escapeHtml(dev.mac_address)}
-        </td>
-        <td>${escapeHtml(vendorDisplay)}</td>
-        <td>${trustBadge}</td>
-        <td title="${dev.last_seen}">${formatRelativeTime(dev.last_seen)}</td>
         <td>
-          <button class="btn btn-secondary btn-icon" onclick="openEditDeviceModal(${dev.id})">
-            ✏️ Edit
+          <div class="device-title">
+            <span>${escape(primaryName)}</span>
+            ${roleTag}
+          </div>
+          ${hostnameSub}
+        </td>
+        <td>
+          <span class="mono-mac" title="Click to copy MAC" onclick="copyText('${dev.mac_address}')" style="cursor: pointer;">
+            ${randomBadge}${escape(dev.mac_address || 'Unavailable')}
+          </span>
+        </td>
+        <td>
+          <span class="tag tag-gray">${escape(dev.vendor || 'Unknown')}</span>
+        </td>
+        <td>${trustHtml}</td>
+        <td title="${dev.last_seen}">${formatHumanTime(dev.last_seen)}</td>
+        <td style="text-align: right;">
+          <button class="btn btn-outline btn-sm" onclick="openEditModal(${dev.id})">
+            Edit
           </button>
         </td>
       </tr>
@@ -302,54 +413,71 @@ function renderDevices() {
   }).join('');
 }
 
-// Render Event Audit Log
-function renderEvents() {
+// Activity Log & Audit Trail
+async function fetchEvents(typeFilter = '') {
+  try {
+    const url = typeFilter ? `/api/events?type=${encodeURIComponent(typeFilter)}` : '/api/events';
+    const res = await fetch(url);
+    events = await res.json();
+    renderEventFeed();
+  } catch (err) {
+    console.error('Events fetch failed:', err);
+  }
+}
+
+function renderEventFeed() {
   if (events.length === 0) {
-    eventList.innerHTML = '<div class="empty-events">No security events recorded yet.</div>';
+    eventList.innerHTML = '<div class="empty-state">No security events recorded in this session.</div>';
     return;
   }
 
-  eventList.innerHTML = events.slice(0, 30).map(ev => {
+  eventList.innerHTML = events.slice(0, 25).map(ev => {
+    let tagClass = 'tag-gray';
+    if (ev.severity === 'CRITICAL') tagClass = 'tag-amber';
+    else if (ev.event_type === 'DEVICE_NEW') tagClass = 'tag-purple';
+    else if (ev.event_type === 'DEVICE_ONLINE') tagClass = 'tag-green';
+
     return `
-      <div class="event-item severity-${ev.severity}">
-        <div>
-          <strong>${escapeHtml(ev.event_type)}:</strong> ${escapeHtml(ev.message)}
+      <div class="event-entry">
+        <div class="event-entry-left">
+          <span class="tag ${tagClass}">${escape(ev.event_type)}</span>
+          <span>${escape(ev.message)}</span>
         </div>
-        <div class="event-time" title="${ev.created_at}">${formatRelativeTime(ev.created_at)}</div>
+        <span class="event-time" title="${ev.created_at}">${formatHumanTime(ev.created_at)}</span>
       </div>
     `;
   }).join('');
 }
 
-// Scan Execution
-async function startScan() {
+// Trigger / Stop Subnet Scans
+async function triggerScan() {
   if (isScanning) return;
-  setScanningUi(true);
+  setScanningState(true);
 
   try {
     const res = await fetch('/api/scan/start', { method: 'POST' });
     if (!res.ok && res.status !== 202) {
       const err = await res.json();
-      showFloatingAlert('Error', err.error || 'Failed to start scan', 'CRITICAL');
-      setScanningUi(false);
+      showToast('Scan Error', err.error || 'Failed to start sweep', 'danger');
+      setScanningState(false);
     }
   } catch (err) {
-    showFloatingAlert('Error', err.message, 'CRITICAL');
-    setScanningUi(false);
+    showToast('Scan Error', err.message, 'danger');
+    setScanningState(false);
   }
 }
 
-async function stopScan() {
+async function cancelScan() {
   try {
     await fetch('/api/scan/stop', { method: 'POST' });
-    setScanningUi(false);
-    showFloatingAlert('Scan Paused', 'Discovery scan stopped by administrator.', 'INFO');
+    setScanningState(false);
+    showToast('Scan Paused', 'Wired discovery stopped by admin.', 'info');
   } catch (err) {
-    console.error('Stop error:', err);
+    console.error('Cancel error:', err);
   }
 }
 
-function setScanningUi(scanning) {
+function setScanningState(scanning) {
   isScanning = scanning;
   btnScanNow.style.display = scanning ? 'none' : 'inline-flex';
   btnStopScan.style.display = scanning ? 'inline-flex' : 'none';
@@ -363,87 +491,86 @@ function setScanningUi(scanning) {
 
 // Real-Time Server-Sent Events (SSE)
 function connectSSE() {
-  if (eventSource) {
-    eventSource.close();
-  }
+  if (eventSource) eventSource.close();
 
   eventSource = new EventSource('/api/stream');
 
   eventSource.onopen = () => {
-    sseIndicator.classList.add('online');
+    sseDot.classList.add('connected');
     sseStatusText.textContent = 'Live Synced';
   };
 
   eventSource.onerror = () => {
-    sseIndicator.classList.remove('online');
+    sseDot.classList.remove('connected');
     sseStatusText.textContent = 'Reconnecting...';
   };
 
-  eventSource.addEventListener('scan_started', (e) => {
-    setScanningUi(true);
-    scanProgressLabel.textContent = 'Initiating rate-limited subnet scan...';
+  eventSource.addEventListener('scan_started', () => {
+    setScanningState(true);
+    scanProgressLabel.textContent = 'Broadcasting rate-limited probes across wired subnet...';
   });
 
   eventSource.addEventListener('scan_progress', (e) => {
-    const prog = JSON.parse(e.data);
-    scanProgressBar.style.width = `${prog.percent}%`;
-    scanProgressPercent.textContent = `${prog.percent}%`;
-    scanProgressLabel.textContent = `Probing ${prog.currentIp || 'hosts'} (${prog.scanned}/${prog.total}) - ${prog.devicesFound} devices found`;
+    const p = JSON.parse(e.data);
+    scanProgressBar.style.width = `${p.percent}%`;
+    scanProgressPercent.textContent = `${p.percent}%`;
+    scanProgressLabel.textContent = `Probing ${p.currentIp || 'hosts'} (${p.scanned}/${p.total}) — ${p.devicesFound} devices identified`;
   });
 
   eventSource.addEventListener('scan_completed', (e) => {
-    const data = JSON.parse(e.data);
-    setScanningUi(false);
-    loadStats();
-    loadDevices();
-    loadEvents();
+    const d = JSON.parse(e.data);
+    setScanningState(false);
+    fetchStats();
+    fetchDevices();
+    fetchEvents();
 
-    showFloatingAlert(
-      'Scan Completed',
-      `Found ${data.devicesFound} devices in ${Math.round(data.summary.durationMs / 1000)}s.`,
-      'INFO'
+    showToast(
+      'Sweep Complete',
+      `Found ${d.devicesFound} active hosts on wired switch in ${(d.summary.durationMs / 1000).toFixed(1)}s.`,
+      'info'
     );
   });
 
   eventSource.addEventListener('alert', (e) => {
     const alertData = JSON.parse(e.data);
-    playAlertChime(alertData.severity);
-    showFloatingAlert(alertData.eventType, alertData.message, alertData.severity);
-    loadEvents();
-    loadStats();
+    playNotificationChime(alertData.severity);
+    showToast(alertData.eventType, alertData.message, alertData.severity === 'CRITICAL' ? 'danger' : 'warning');
+    fetchEvents();
+    fetchStats();
+    fetchDevices();
   });
 
   eventSource.addEventListener('device_updated', () => {
-    loadDevices();
-    loadStats();
+    fetchDevices();
+    fetchStats();
   });
 }
 
-// Floating Live Alert Toast
-function showFloatingAlert(title, message, severity = 'INFO') {
-  const card = document.createElement('div');
-  card.className = `live-alert-card ${severity.toLowerCase()}`;
-  card.innerHTML = `
-    <strong>${escapeHtml(title)}</strong>
-    <div>${escapeHtml(message)}</div>
+// Toast Notifications
+function showToast(title, message, severity = 'info') {
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${severity}`;
+  toast.innerHTML = `
+    <strong>${escape(title)}</strong>
+    <div style="margin-top: 2px; color: var(--text-secondary); font-size: 12px;">${escape(message)}</div>
   `;
-  liveAlertContainer.appendChild(card);
+  liveAlertContainer.appendChild(toast);
 
   setTimeout(() => {
-    card.style.opacity = '0';
-    card.style.transition = 'opacity 0.5s ease';
-    setTimeout(() => card.remove(), 500);
-  }, 6000);
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity 0.3s ease';
+    setTimeout(() => toast.remove(), 300);
+  }, 5000);
 }
 
-// Edit Device Profile Modal
-window.openEditDeviceModal = function(id) {
+// Modal Handlers
+window.openEditModal = function(id) {
   const dev = devices.find(d => d.id === id);
   if (!dev) return;
 
   editDeviceId.value = dev.id;
   editDeviceIp.value = dev.last_ip;
-  editDeviceMac.value = dev.mac_address;
+  editDeviceMac.value = dev.mac_address || '';
   editDeviceName.value = dev.custom_name || '';
   editDeviceTrust.value = dev.trust_level || 'untrusted';
   editDeviceNotes.value = dev.notes || '';
@@ -451,7 +578,7 @@ window.openEditDeviceModal = function(id) {
   editDeviceModal.style.display = 'flex';
 };
 
-async function handleSaveDeviceProfile(e) {
+async function saveDeviceProfile(e) {
   e.preventDefault();
   const id = editDeviceId.value;
   const payload = {
@@ -468,17 +595,16 @@ async function handleSaveDeviceProfile(e) {
     });
     if (res.ok) {
       editDeviceModal.style.display = 'none';
-      await loadDevices();
-      await loadStats();
-      showFloatingAlert('Profile Updated', 'Device alias and trust settings saved.', 'INFO');
+      await fetchDevices();
+      await fetchStats();
+      showToast('Profile Saved', 'Custom device alias and trust settings updated.', 'info');
     }
   } catch (err) {
-    alert('Failed to save device profile: ' + err.message);
+    alert('Failed to save profile: ' + err.message);
   }
 }
 
-// Router Advisor Modal
-async function openRouterModal() {
+async function showRouterModal() {
   try {
     const res = await fetch('/api/router/info');
     const guidance = await res.json();
@@ -487,22 +613,92 @@ async function openRouterModal() {
     routerPortalLink.href = guidance.portalUrl;
 
     routerGuidesContainer.innerHTML = guidance.routerGuides.map(g => `
-      <div class="router-brand-guide">
-        <h4>${escapeHtml(g.brand)} (${escapeHtml(g.defaultIp)})</h4>
+      <div class="router-guide-card">
+        <h4>${escape(g.brand)} (${escape(g.defaultIp)})</h4>
         <ol>
-          ${g.steps.map(s => `<li>${escapeHtml(s)}</li>`).join('')}
+          ${g.steps.map(s => `<li>${escape(s)}</li>`).join('')}
         </ol>
       </div>
     `).join('');
 
     routerModal.style.display = 'flex';
   } catch (err) {
-    console.error('Failed to load router guide:', err);
+    console.error('Failed to load router info:', err);
   }
 }
 
-// Helpers
-function escapeHtml(str) {
+async function showUsersModal() {
+  usersModal.style.display = 'flex';
+  usersTableBody.innerHTML = '<tr><td colspan="5" class="empty-state">Loading users...</td></tr>';
+  try {
+    const res = await fetch('/api/users');
+    if (!res.ok) {
+      usersTableBody.innerHTML = '<tr><td colspan="5" class="empty-state">Failed to load users.</td></tr>';
+      return;
+    }
+    const userList = await res.json();
+    if (userList.length === 0) {
+      usersTableBody.innerHTML = '<tr><td colspan="5" class="empty-state">No users registered.</td></tr>';
+      return;
+    }
+    usersTableBody.innerHTML = userList.map(u => `
+      <tr>
+        <td class="mono-ip">${escape(u.username)}</td>
+        <td>${escape(u.full_name || '—')}</td>
+        <td>
+          <select class="select-input select-sm" onchange="changeUserRole(${u.id}, this.value)" ${u.id === currentUser?.id ? 'disabled' : ''}>
+            <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
+            <option value="user" ${u.role === 'user' ? 'selected' : ''}>User</option>
+          </select>
+        </td>
+        <td>${formatHumanTime(u.created_at)}</td>
+        <td>
+          ${u.id !== currentUser?.id ? `
+            <button class="btn btn-danger btn-sm" onclick="deleteUserAccount(${u.id})">Delete</button>
+          ` : '<span class="tag tag-blue">You</span>'}
+        </td>
+      </tr>
+    `).join('');
+  } catch (err) {
+    usersTableBody.innerHTML = `<tr><td colspan="5" class="empty-state">${escape(err.message)}</td></tr>`;
+  }
+}
+
+window.changeUserRole = async function(id, role) {
+  try {
+    const res = await fetch(`/api/users/${id}/role`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role })
+    });
+    if (!res.ok) throw new Error('Failed to update role');
+    showToast('Role Updated', 'User role has been updated.', 'info');
+  } catch (err) {
+    showToast('Update Failed', err.message, 'danger');
+  }
+};
+
+window.deleteUserAccount = async function(id) {
+  if (!confirm('Are you sure you want to delete this user account?')) return;
+  try {
+    const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete user');
+    showToast('User Deleted', 'Account removed.', 'info');
+    showUsersModal();
+  } catch (err) {
+    showToast('Delete Failed', err.message, 'danger');
+  }
+};
+
+// Utilities
+function copyText(str) {
+  if (!str) return;
+  navigator.clipboard.writeText(str).then(() => {
+    showToast('Copied to Clipboard', str, 'info');
+  }).catch(() => {});
+}
+
+function escape(str) {
   if (!str) return '';
   return String(str)
     .replace(/&/g, '&amp;')
@@ -512,22 +708,17 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-function formatRelativeTime(dateString) {
+function formatHumanTime(dateString) {
   if (!dateString) return 'Never';
-  const now = new Date();
-  const date = new Date(dateString);
-  const diffSec = Math.floor((now - date) / 1000);
-
+  const diffSec = Math.floor((new Date() - new Date(dateString)) / 1000);
   if (diffSec < 10) return 'Just now';
   if (diffSec < 60) return `${diffSec}s ago`;
   const diffMin = Math.floor(diffSec / 60);
   if (diffMin < 60) return `${diffMin}m ago`;
   const diffHours = Math.floor(diffMin / 60);
   if (diffHours < 24) return `${diffHours}h ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  return `${diffDays}d ago`;
+  return `${Math.floor(diffHours / 24)}d ago`;
 }
 
 // Boot application
 window.addEventListener('DOMContentLoaded', init);
-
