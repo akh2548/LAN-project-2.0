@@ -5,37 +5,36 @@
  * MAC filtering, client isolation, and hardware limits.
  */
 class RouterAdvisor {
-  static getGuidance(gatewayIp = '192.168.31.1') {
+  static getGuidance(gatewayIp = '192.168.0.1') {
     return {
       gatewayIp,
       portalUrl: `http://${gatewayIp}`,
       boundaryNotice: {
-        title: 'Router & Switched Network Security Realities',
+        title: 'Router & Switched Ethernet Security Realities',
         points: [
-          'A program running on a standard computer cannot forcibly disconnect another device from your router without router credentials or harmful network de-authentication attacks.',
-          'Modern Ethernet switches and Wi-Fi access points separate traffic so that unicast traffic between other devices does not pass through this computer.',
-          'To block or blacklist a device, you must configure MAC Filtering or Access Control directly on your router administration portal.'
+          'A program running on a standard computer cannot forcibly disconnect another wired device from an Ethernet switch without managed switch port control or router access.',
+          'Switched Ethernet segments direct unicast frames only to the physical port where the destination MAC resides.',
+          'To restrict or isolate a device, configure MAC Filtering, Static DHCP bindings, or Port Isolation directly on your router or switch administration portal.'
         ]
       },
       routerGuides: [
         {
-          brand: 'Xiaomi / Mi Wi-Fi',
-          defaultIp: '192.168.31.1',
-          steps: [
-            'Log into http://192.168.31.1 or miwifi.com using your router admin password.',
-            'Navigate to "Security" or "Device Control".',
-            'Find the unfamiliar MAC address in the connected list and click "Blacklist" or toggle "Access Permitted" to OFF.',
-            'To isolate smart home devices, enable "Guest Wi-Fi" from the Wi-Fi settings.'
-          ]
-        },
-        {
-          brand: 'TP-Link',
+          brand: 'TP-Link / Archer',
           defaultIp: '192.168.0.1 or 192.168.1.1',
           steps: [
             'Open http://tplinkwifi.net or http://192.168.0.1.',
             'Go to Advanced > Security > Access Control.',
-            'Toggle Access Control to ON, select "Blacklist Mode", and add the target device MAC.',
-            'Under Advanced > Wireless > Wireless Settings, check "Enable AP Isolation" if you want to prevent Wi-Fi clients from communicating with each other.'
+            'Toggle Access Control to ON, select "Blacklist Mode", and add the target device MAC address.',
+            'Under Network > DHCP Server, reserve static IP addresses for your recognized wired computers.'
+          ]
+        },
+        {
+          brand: 'Netgear',
+          defaultIp: '192.168.1.1 or 192.168.0.1',
+          steps: [
+            'Open http://routerlogin.net or your gateway IP in your browser.',
+            'Go to ADVANCED > Security > Access Control.',
+            'Select "Turn on Access Control" and block unfamiliar MAC addresses.'
           ]
         },
         {

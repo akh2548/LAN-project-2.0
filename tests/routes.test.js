@@ -125,6 +125,20 @@ test('AppServer: REST API handlers and responses', async () => {
   const sysInfo = JSON.parse(sysRes.body);
   assert.strictEqual(typeof sysInfo.platform, 'string');
 
+  // 5. /api/settings
+  const getSettingsRes = await mockInvoke('GET', '/api/settings', null, loginCookie);
+  assert.strictEqual(getSettingsRes.statusCode, 200);
+  const settingsData = JSON.parse(getSettingsRes.body);
+  assert.strictEqual(settingsData.lanOnly, true);
+  assert.strictEqual(settingsData.isWired, true);
+
+  const saveSettingsRes = await mockInvoke('POST', '/api/settings', {
+    scanInterval: 120,
+    desktopNotifications: false
+  }, loginCookie);
+  assert.strictEqual(saveSettingsRes.statusCode, 200);
+  assert.strictEqual(JSON.parse(saveSettingsRes.body).success, true);
+
   const logoutRes = await mockInvoke('POST', '/api/auth/logout', null, loginCookie);
   assert.strictEqual(logoutRes.statusCode, 200);
   const afterLogoutRes = await mockInvoke('GET', '/api/stats', null, loginCookie);

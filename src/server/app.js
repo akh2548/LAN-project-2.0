@@ -331,13 +331,25 @@ class AppServer {
 
       if (pathname === '/api/system/info' && method === 'GET') {
         const fresh = await this.diagnostics.runPreFlightCheck();
+        if (config.network?.lanOnly) {
+          fresh.wifiInterfaces = [];
+        }
         this.cachedPreFlight = fresh;
         this.sendJson(res, 200, fresh);
         return;
       }
 
       if (pathname === '/api/devices' && method === 'GET') {
-        const devices = this.db.getAllDevices();
+        let devices = this.db.getAllDevices();
+        if (config.network?.lanOnly) {
+          const activeIface = this.cachedPreFlight?.activeInterface;
+          if (activeIface && activeIface.ip && activeIface.netmask) {
+            devices = devices.filter(d => NetworkDiagnostics.isIpInSubnet(d.last_ip, activeIface.ip, activeIface.netmask));
+          } else {
+            // Exclude any non-wired or Wi-Fi IP addresses
+            devices = devices.filter(d => !d.last_ip.startsWith('192.168.31.'));
+          }
+        }
         this.sendJson(res, 200, devices);
         return;
       }
@@ -408,10 +420,76 @@ class AppServer {
 
       if (pathname === '/api/router/info' && method === 'GET') {
         const gw = (this.cachedPreFlight && this.cachedPreFlight.activeInterface)
-          ? this.cachedPreFlight.activeInterface.gateway || '192.168.31.1'
-          : '192.168.31.1';
+          ? this.cachedPreFlight.activeInterface.gateway || '192.168.0.1'
+          : '192.168.0.1';
         const guidance = RouterAdvisor.getGuidance(gw);
         this.sendJson(res, 200, guidance);
+        return;
+      }
+
+      if (pathname === '/api/settings' && method === 'GET') {
+        const active = this.cachedPreFlight?.activeInterface;
+        const currentSettings = {
+          adapterName: active?.description || active?.name || 'Ethernet Adapter',
+          macAddress: active?.mac || 'D0:0C:5E:62:3F:4C',
+          linkStatus: active?.ip ? 'Connected' : 'Disconnected',
+          isWired: true,
+          ipMode: active?.dhcpServer ? 'dhcp' : 'static',
+          ipAddress: active?.ip || '192.168.0.100',
+          subnetMask: active?.netmask || '255.255.255.0',
+          gateway: active?.gateway || '192.168.0.1',
+          dhcpServer: active?.dhcpServer || active?.gateway || '192.168.0.1',
+          preferredDns: '192.168.0.1',
+          alternateDns: '8.8.8.8',
+          lanOnly: true,
+          notifyNewDevices: true,
+          soundAlerts: true,
+          desktopNotifications: config.alerts?.enableDesktopToast ?? true,
+          scanInterval: config.scanner?.autoScanIntervalSeconds ?? 60,
+          concurrency: config.scanner?.concurrency ?? 16
+        };
+        this.sendJson(res, 200, currentSettings);
+        return;
+      }
+
+      if (pathname === '/api/settings' && method === 'POST') {
+        const body = await this.readJsonBody(req);
+        if (body.scanInterval !== undefined) {
+          const interval = parseInt(body.scanInterval, 10);
+          config.scanner.autoScanIntervalSeconds = interval;
+          if (interval > 0) {
+            this.startAutoScan(interval);
+          } else if (this.autoScanTimer) {
+            clearInterval(this.autoScanTimer);
+            this.autoScanTimer = null;
+          }
+        }
+        if (body.desktopNotifications !== undefined) {
+          config.alerts.enableDesktopToast = !!body.desktopNotifications;
+        }
+        this.sendJson(res, 200, { success: true, message: 'Settings saved successfully.' });
+        return;
+      }
+
+      if (pathname === '/api/settings/test' && method === 'POST') {
+        const active = this.cachedPreFlight?.activeInterface;
+        const targetIp = (active && active.gateway) ? active.gateway : '192.168.0.1';
+        try {
+          const pingRes = await this.adapter.pingHost(targetIp, 1000);
+          this.sendJson(res, 200, {
+            success: true,
+            reachable: pingRes.alive,
+            timeMs: pingRes.timeMs,
+            targetIp
+          });
+        } catch (err) {
+          this.sendJson(res, 200, {
+            success: false,
+            reachable: false,
+            error: err.message,
+            targetIp
+          });
+        }
         return;
       }
 
